@@ -12,9 +12,14 @@ Dự án xây dựng một giải pháp **Data Warehouse (Kho dữ liệu)** ho�
 
 ---
 
-## 2. Phạm vi Dữ liệu và Các Phát hiện Kỹ thuật Chính
+## 2. Nguồn Dữ Liệu và Phạm Vi Nghiệp Vụ
 
-* **Bộ dữ liệu nguồn:** *Retail Transactions and Stocks Data* (`retail-transactions-and-stocks-data.zip`), bao gồm hai bảng `retail_sales_ml_apl.csv` (125.751 dòng) và `retail_inventory_ml_apl.csv` (284.755 dòng).
+* **Tên Dataset:** Retail Transactions and Stocks Data
+* **Nguồn dữ liệu chính thức (Mendeley Data):** https://data.mendeley.com/datasets/27x8mjm8k4/1
+* **Tệp dữ liệu đầu vào (`data/raw/`):** `retail-transactions-and-stocks-data.zip`
+  * **Mã kiểm tra toàn vẹn (`SHA-256`):** `f65cb8ace7d2d7864986dde91ae658311cd334e5d6c742d3a9f9f8bfc9675480`
+  * `retail_sales_ml_apl.csv`: 125.751 dòng, 17 cột (0 dòng trùng lặp).
+  * `retail_inventory_ml_apl.csv`: 284.755 dòng, 18 cột (0 dòng trùng lặp).
 * **Phạm vi nghiệp vụ:** Giới hạn phân tích trên **một cửa hàng duy nhất là `STR-1006`** (được lựa chọn qua bước Data Profiling vì có mật độ giao dịch cao nhất: **5.904 dòng Sales** và **11.142 dòng Inventory**, 323 ngày hoạt động từ `2025-06-01` đến `2026-04-24`, tỷ lệ khớp mã SKU giữa hai bảng đạt **95,0%**).
 * **Kênh bán hàng & Loại hình cửa hàng:** Kênh `Channel Alpha`, mô hình `Retail Storefront`.
 * **Các quy tắc dữ liệu đã xác minh và xử lý:**
@@ -24,30 +29,34 @@ Dự án xây dựng một giải pháp **Data Warehouse (Kho dữ liệu)** ho�
 
 ---
 
-## 3. Kiến trúc Hệ thống và Mô hình Dữ liệu
+## 3. Kiến trúc Phân tầng Dữ liệu & Mô hình Kho Dữ liệu
 
-### Luồng xử lý dữ liệu (Data Pipeline)
-
-    CSV trong ZIP nguồn (Bất biến)
-           │
-           ▼  [etl/run_etl.py]
-    Tầng Staging (stg_sales, stg_inventory - MySQL)
-           │
-           ▼  Làm sạch, chuẩn hóa & ánh xạ Surrogate Key
-    Tầng Core Warehouse (Constellation Schema - MySQL)
-      ├── Conformed Dimensions: dim_date, dim_product, dim_store, dim_supplier, dim_sales_type
-      └── Fact Tables: fact_sales, fact_inventory_interval
-           │
-           ├─────────────────────────────┐
-           ▼                             ▼
-    Tầng Semantic Views            Nhánh Machine Learning
-    (vw_daily_product_sales,       (ml/run_forecasting.py:
-     vw_current_inventory,          Feature Engineering -> Temporal Split
-     vw_weekly_product_sales)       -> Random Forest / Gradient Boosting)
-           │                             │
-           └──────────────┬──────────────┘
+### Luồng xử lý dữ liệu (End-to-End Pipeline)
+```text
+Tầng 1: RAW DATA (data/raw/retail-transactions-and-stocks-data.zip - Bất biến)
+       │
+       ▼  [etl/run_etl.py]
+Tầng 2: STAGING (data/staging/*.csv & MySQL stg_sales, stg_inventory)
+       │
+       ▼  Làm sạch, chuẩn hóa & ánh xạ Surrogate Key
+Tầng 3: CORE DATA WAREHOUSE (MySQL retail_dw - Constellation Schema)
+  ├── Conformed Dimensions: dim_date, dim_product, dim_store, dim_supplier, dim_sales_type
+  └── Fact Tables: fact_sales, fact_inventory_interval
+       │
+       ├──────────────────────────────────────┐
+       ▼                                      ▼
+Tầng 4A: SEMANTIC VIEWS & PROCESSED     Tầng 4B: MACHINE LEARNING FORECASTING
+(vw_daily_product_sales,                (ml/run_forecasting.py:
+ vw_current_inventory,                   Feature Engineering -> Temporal Split
+ vw_weekly_product_sales,                -> Random Forest / Gradient Boosting
+ data/processed/mart_*.csv)              -> ml_model_metrics, ml_weekly_demand_forecast)
+       │                                      │
+       └──────────────────┬───────────────────┘
                           ▼
-           BI Dashboard & Decision Support (bi/app.py - Streamlit)
+Tầng 5: CONSUMPTION & REPORTING
+  ├── BI Dashboard tương tác: bi/app.py (Streamlit + Plotly)
+  └── Báo cáo tổng hợp & Biểu đồ tĩnh: reports/final_project_report.md & reports/figures/*.png
+```
 
 ### Danh mục bảng trong Database `retail_dw`
 
@@ -70,32 +79,46 @@ Dự án xây dựng một giải pháp **Data Warehouse (Kho dữ liệu)** ho�
 
 ---
 
-## 4. Cấu trúc Thư mục Mã nguồn
+## 4. Cấu trúc Thư mục Dự án
 
-    retail-dw/
-    ├── Claude.md                                      # Tài liệu kế hoạch, quy tắc và ràng buộc dự án
-    ├── README.md                                      # Tài liệu hướng dẫn cài đặt, chạy và nghiệm thu
-    ├── requirements.txt                               # Danh sách thư viện Python phụ thuộc
-    ├── .env.example                                   # File mẫu cấu hình biến môi trường kết nối MySQL
-    ├── data/
-    │   └── raw/
-    │       └── retail-transactions-and-stocks-data.zip # Gói dữ liệu nguồn gốc (không chỉnh sửa)
-    ├── database/
-    │   ├── ddl/
-    │   │   └── 01_create_schema.sql                   # Script SQL khởi tạo Database, Staging, Dim, Fact
-    │   ├── views/
-    │   │   └── 02_create_analytics_views.sql          # Script SQL tạo Semantic Views
-    │   └── analytics/
-    │       └── 03_olap_queries.sql                    # Bộ 8 truy vấn phân tích KPI và OLAP
-    ├── etl/
-    │   └── run_etl.py                                 # Pipeline ETL và đối soát dữ liệu tự động
-    ├── ml/
-    │   └── run_forecasting.py                         # Huấn luyện mô hình ML và sinh dự báo 4 tuần tới
-    ├── bi/
-    │   └── app.py                                     # Ứng dụng Web Dashboard Streamlit (4 tab chức năng)
-    └── scripts/
-        ├── profile_dataset.py                         # Script kiểm kê và phân tích chất lượng dữ liệu gốc
-        └── run_sql_analytics.py                       # Script thực thi và in kết quả truy vấn SQL/OLAP
+```text
+retail-dw/
+├── Claude.md                                      # Tài liệu kế hoạch, quy tắc và ràng buộc dự án
+├── README.md                                      # Tài liệu hướng dẫn cài đặt, chạy và nghiệm thu
+├── requirements.txt                               # Danh sách thư viện Python phụ thuộc
+├── .env.example                                   # File mẫu cấu hình biến môi trường kết nối MySQL
+├── data/
+│   ├── raw/
+│   │   └── retail-transactions-and-stocks-data.zip # Gói dữ liệu nguồn gốc (không chỉnh sửa)
+│   ├── staging/
+│   │   ├── stg_sales_str1006.csv                  # Dữ liệu Staging Sales đã lọc STR-1006
+│   │   └── stg_inventory_str1006.csv              # Dữ liệu Staging Inventory đã lọc STR-1006
+│   └── processed/
+│       ├── mart_daily_product_sales.csv           # Data Mart doanh số theo ngày & sản phẩm
+│       ├── mart_current_inventory.csv             # Data Mart tồn kho hiện hành
+│       └── mart_ml_weekly_forecast.csv            # Data Mart chuỗi thời gian & dự báo ML
+├── database/
+│   ├── ddl/
+│   │   └── 01_create_schema.sql                   # Script SQL khởi tạo Database, Staging, Dim, Fact
+│   ├── views/
+│   │   └── 02_create_analytics_views.sql          # Script SQL tạo Semantic Views
+│   └── analytics/
+│       └── 03_olap_queries.sql                    # Bộ 8 truy vấn phân tích KPI và OLAP
+├── etl/
+│   └── run_etl.py                                 # Pipeline ETL và đối soát dữ liệu tự động
+├── ml/
+│   └── run_forecasting.py                         # Huấn luyện mô hình ML và sinh dự báo 4 tuần tới
+├── bi/
+│   └── app.py                                     # Ứng dụng Web Dashboard Streamlit (4 tab chức năng)
+├── reports/
+│   ├── final_project_report.md                    # Báo cáo tổng kết kỹ thuật tự động xuất từ dữ liệu thật
+│   └── figures/                                   # Thư mục chứa 5 biểu đồ PNG (300 DPI) phục vụ báo cáo
+└── scripts/
+    ├── pipeline.py                                # Script điều phối chạy toàn bộ Pipeline từ đầu đến cuối
+    ├── profile_dataset.py                         # Script kiểm kê và phân tích chất lượng dữ liệu gốc
+    ├── run_sql_analytics.py                       # Script thực thi và in kết quả truy vấn SQL/OLAP
+    └── generate_report.py                         # Script xuất phân tầng dữ liệu, vẽ biểu đồ & xuất báo cáo
+```
 
 ---
 
@@ -108,52 +131,40 @@ Dự án xây dựng một giải pháp **Data Warehouse (Kho dữ liệu)** ho�
 
 ### Bước 1: Tạo môi trường ảo và cài đặt thư viện
 Mở PowerShell tại thư mục gốc `retail-dw\` và chạy:
-
-    python -m venv .venv
-    .\.venv\Scripts\Activate.ps1
-    pip install -r requirements.txt
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+pip install matplotlib tabulate
+```
 
 ### Bước 2: Cấu hình kết nối MySQL
 Tạo file `.env` từ file mẫu `.env.example`:
-
-    Copy-Item .env.example .env
-
+```powershell
+Copy-Item .env.example .env
+```
 Mở file `.env` và điều chỉnh thông số kết nối thực tế trên máy của bạn:
+```env
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=mat_khau_mysql_cua_ban
+MYSQL_DATABASE=retail_dw
+TARGET_STORE_ID=STR-1006
+RAW_ZIP_PATH=data/raw/retail-transactions-and-stocks-data.zip
+```
 
-    MYSQL_HOST=127.0.0.1
-    MYSQL_PORT=3306
-    MYSQL_USER=root
-    MYSQL_PASSWORD=mat_khau_mysql_cua_ban
-    MYSQL_DATABASE=retail_dw
-    TARGET_STORE_ID=STR-1006
-    RAW_ZIP_PATH=data/raw/retail-transactions-and-stocks-data.zip
+### Bước 3: Chạy toàn bộ Pipeline tự động (Khuyến nghị)
+Chạy một lệnh duy nhất từ thư mục gốc `retail-dw\` để thực thi tuần tự từ kiểm kê dữ liệu $\rightarrow$ nạp ETL & đối soát MySQL $\rightarrow$ tạo Semantic Views & truy vấn OLAP $\rightarrow$ huấn luyện mô hình ML $\rightarrow$ xuất dữ liệu phân tầng và báo cáo:
+```powershell
+python scripts/pipeline.py
+```
+*(Hoặc có thể chạy lẻ từng bước nếu cần kiểm thử riêng biệt: `scripts/profile_dataset.py` $\rightarrow$ `etl/run_etl.py` $\rightarrow$ `scripts/run_sql_analytics.py` $\rightarrow$ `ml/run_forecasting.py` $\rightarrow$ `scripts/generate_report.py`).*
 
-### Bước 3: Kiểm kê và Profiling dữ liệu nguồn (Tùy chọn)
-
-    python scripts/profile_dataset.py
-
-### Bước 4: Chạy Pipeline ETL và Đối soát dữ liệu
-
-    python etl/run_etl.py
-
-*Kiểm thử thành công:* Chương trình tạo schema `retail_dw`, nạp toàn bộ dữ liệu vào Staging/Dimension/Fact và in bảng **BÁO CÁO ĐỐI SOÁT DỮ LIỆU (RECONCILIATION)** xác nhận khớp 100% giữa Staging và Data Warehouse.
-
-### Bước 5: Tạo Semantic Views và chạy bộ truy vấn OLAP
-
-    python scripts/run_sql_analytics.py
-
-*Kiểm thử thành công:* Khởi tạo 3 Semantic Views và xuất kết quả của 8 truy vấn phân tích (`Q1` đến `Q8`) ra màn hình console.
-
-### Bước 6: Huấn luyện mô hình Machine Learning Dự báo Nhu cầu
-
-    python ml/run_forecasting.py
-
-*Kiểm thử thành công:* Huấn luyện và đánh giá các mô hình trên tập kiểm thử thời gian 8 tuần cuối, sau đó lưu kết quả vào hai bảng `ml_model_metrics` và `ml_weekly_demand_forecast` trong MySQL.
-
-### Bước 7: Khởi chạy BI Dashboard & Hệ thống Hỗ trợ Quyết định
-
-    python -m streamlit run bi/app.py
-
+### Bước 4: Khởi chạy BI Dashboard & Hệ thống Hỗ trợ Quyết định
+```powershell
+python -m streamlit run bi/app.py
+```
 Truy cập trình duyệt tại địa chỉ `http://localhost:8501` để tương tác với 4 phân hệ:
 1. **Tổng quan Doanh số:** Theo dõi KPI chính, xu hướng doanh thu/lợi nhuận theo tháng, phân bổ theo thứ trong tuần và cơ cấu ngành hàng.
 2. **Sản phẩm & Khuyến mãi:** Phân tích hiệu quả các mức giá bán (`Full Price`, `Promo`, `Markdown`, `Clearance`) và bảng xếp hạng danh mục/SKU.
