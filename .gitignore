@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.DS_Store
+Thumbs.db
+.env
+# Raw and generated data are kept out of source control by default
+data/raw/olist/
+data/processed/*
+reports/*.csv
+reports/*.json
+reports/phase1_dataset_profile.md
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!reports/.gitkeep
